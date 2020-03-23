@@ -1,30 +1,31 @@
-#include <miner.h>
+// Minotaur hash
+
+#include "minotaur.h"
 
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
 #include <stdio.h>
 
-#include <sha3/sph_blake.h>
-#include <sha3/sph_bmw.h>
-#include <sha3/sph_groestl.h>
-#include <sha3/sph_jh.h>
-#include <sha3/sph_keccak.h>
-#include <sha3/sph_skein.h>
-#include <sha3/sph_luffa.h>
-#include <sha3/sph_cubehash.h>
-#include <sha3/sph_shavite.h>
-#include <sha3/sph_simd.h>
-#include <sha3/sph_echo.h>
-#include <sha3/sph_hamsi.h>
-#include <sha3/sph_fugue.h>
-#include <sha3/sph_shabal.h>
-#include <sha3/sph_whirlpool.h>
-#include <sha3/sph_sha2.h>
+#include "sha3/sph_blake.h"
+#include "sha3/sph_bmw.h"
+#include "sha3/sph_groestl.h"
+#include "sha3/sph_jh.h"
+#include "sha3/sph_keccak.h"
+#include "sha3/sph_skein.h"
+#include "sha3/sph_luffa.h"
+#include "sha3/sph_cubehash.h"
+#include "sha3/sph_shavite.h"
+#include "sha3/sph_simd.h"
+#include "sha3/sph_echo.h"
+#include "sha3/sph_hamsi.h"
+#include "sha3/sph_fugue.h"
+#include "sha3/sph_shabal.h"
+#include "sha3/sph_whirlpool.h"
+#include "sha3/sph_sha2.h"
 
 // Config
-#define MINOTAUR_ALGO_COUNT		16
-//#define MINOTAUR_DEBUG
+#define MINOTAUR_ALGO_COUNT	16
 
 typedef struct TortureNode TortureNode;
 typedef struct TortureGarden TortureGarden;
@@ -56,7 +57,7 @@ struct TortureGarden {
 };
 
 // Get a 64-byte hash for given 64-byte input, using given TortureGarden contexts and given algo index
-void get_hash(void *output, const void *input, TortureGarden *garden, unsigned int algo)
+void minotaur_hash(void *output, const void *input, TortureGarden *garden, unsigned int algo)
 {    
 	unsigned char _ALIGN(64) hash[64];
 
@@ -151,7 +152,7 @@ void get_hash(void *output, const void *input, TortureGarden *garden, unsigned i
 void traverse_garden(TortureGarden *garden, void *hash, TortureNode *node)
 {
     unsigned char _ALIGN(64) partialHash[64];
-    get_hash(partialHash, hash, garden, node->algo);
+    minotaur_hash(partialHash, hash, garden, node->algo);
 
     if (partialHash[63] % 2 == 0) {                                     // Last byte of output hash is even
         if (node->childLeft != NULL)
@@ -172,7 +173,7 @@ inline void link_nodes(TortureNode *parent, TortureNode *childLeft, TortureNode 
 }
 
 // Produce a 32-byte hash from 80-byte input data
-void minotaurhash(void *output, const void *input)
+void minotaurhash(const char* input, char* output, uint32_t len)
 {    
     // Create torture garden nodes. Note that both sides of 19 and 20 lead to 21, and 21 has no children (to make traversal complete).
     // Every path through the garden stops at 7 nodes.
@@ -214,52 +215,6 @@ void minotaurhash(void *output, const void *input)
     // Send the initial hash through the torture garden
     traverse_garden(&garden, hash, &garden.nodes[0]);
 
-	// Truncate the result to 32 bytes
-    memcpy(output, hash, 32);
-
-#ifdef MINOTAUR_DEBUG
-    printf("*** Final hash:\t\t");
-    for (int i = 31; i >= 0; i--) printf("%02x", output[i]);
-    printf("\n");
-
-    fflush(0);
-#endif
-}
-
-// Scan driver
-int scanhash_minotaur(int thr_id, struct work *work, uint32_t max_nonce, uint64_t *hashes_done)
-{
-	uint32_t _ALIGN(64) hash[8];
-	uint32_t _ALIGN(64) endiandata[20];
-	uint32_t *pdata = work->data;
-	uint32_t *ptarget = work->target;
-
-	const uint32_t Htarg = ptarget[7];
-	const uint32_t first_nonce = pdata[19];
-	uint32_t nonce = first_nonce;
-	volatile uint8_t *restart = &(work_restart[thr_id].restart);
-
-	if (opt_benchmark)
-		ptarget[7] = 0x0cff;
-
-	for (int k=0; k < 19; k++)
-		be32enc(&endiandata[k], pdata[k]);
-
-	do {
-		be32enc(&endiandata[19], nonce);
-		minotaurhash(hash, endiandata);
-
-		if (hash[7] <= Htarg && fulltest(hash, ptarget)) {
-			work_set_target_ratio(work, hash);
-			pdata[19] = nonce;
-			*hashes_done = pdata[19] - first_nonce;
-			return 1;
-		}
-		nonce++;
-
-	} while (nonce < max_nonce && !(*restart));
-
-	pdata[19] = nonce;
-	*hashes_done = pdata[19] - first_nonce + 1;
-	return 0;
+	// Truncate the result
+    memcpy(output, hash, len);
 }
